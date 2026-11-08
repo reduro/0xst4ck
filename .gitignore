@@ -1,16 +1,32 @@
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
 
-build/
-*.bak-*
-*.bak
+# Rust & Cargo
+target/
+src-tauri/target/
+src-tauri/gen/schemas/
+**/*.rs.bk
 
-.venv/
-venv/
-env/
+# SteamCMD runtime (downloaded by steamcmd)
+tools/steamcmd/
+
+# Logs and temp files
+*.log
+*.old
+*.tmp
+panic.log
+err.log
+out.log
+rel_out.log
+stdout.log
+stderr.log
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
 .idea/
-.vscode/
-.DS_Store
-Thumbs.db
+*.suo
+*.sln

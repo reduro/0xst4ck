@@ -1,0 +1,17 @@
+Servers:
+  NameServer:
+    - port: 15058
+      external_address: 127.0.0.1:5058
+
+  MasterServer:
+    - port: 15055
+      external_address: 127.0.0.1:5055
+
+  GameServer:
+    - port: 15056
+      external_address: 127.0.0.1:5056
+
+HTTP:
+  enabled: true
+  address: 0.0.0.0
+  port: 5088
