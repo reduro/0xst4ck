@@ -193,8 +193,16 @@ pub fn launch_game_dynamic(game_id: &str, mode: &str) -> Result<String, String> 
         .env("SteamEnv", "1")
         .env("ENABLE_STEAM_OVERLAY", "1");
 
-    // If EOS is required, copy OnlineFix.dll to game directory if not present
-    if runtime.eos || mode == "eos" {
+    // Clean up any rogue OnlineFix.dll left in a Photon game directory
+    if requires_photon || mode == "photon" {
+        let rogue_of = working_dir.join("OnlineFix.dll");
+        if rogue_of.exists() {
+            let _ = fs::remove_file(&rogue_of);
+        }
+    }
+
+    // If EOS is required, copy OnlineFix.dll to game directory if not present (NEVER for Photon games)
+    if (runtime.eos || mode == "eos") && !requires_photon && mode != "photon" {
         let of_src = ensure_onlinefix_dll();
         if of_src.exists() {
             let of_dst = working_dir.join("OnlineFix.dll");

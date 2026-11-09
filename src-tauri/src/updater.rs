@@ -47,12 +47,25 @@ pub async fn check_for_updates(repo: Option<String>) -> Result<UpdateInfo, Strin
     let mut asset_name = None;
 
     if let Some(assets) = val["assets"].as_array() {
+        // Prioritize Setup / Installer executable so it installs cleanly over the old version
         for asset in assets {
             let name = asset["name"].as_str().unwrap_or("");
-            if name.ends_with(".exe") {
+            let lower = name.to_lowercase();
+            if lower.ends_with(".exe") && (lower.contains("setup") || lower.contains("installer")) {
                 download_url = asset["browser_download_url"].as_str().map(|s| s.to_string());
                 asset_name = Some(name.to_string());
                 break;
+            }
+        }
+        // Fallback to any executable asset if no setup file was found
+        if download_url.is_none() {
+            for asset in assets {
+                let name = asset["name"].as_str().unwrap_or("");
+                if name.ends_with(".exe") {
+                    download_url = asset["browser_download_url"].as_str().map(|s| s.to_string());
+                    asset_name = Some(name.to_string());
+                    break;
+                }
             }
         }
     }

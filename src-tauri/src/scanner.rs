@@ -77,9 +77,6 @@ const PHOTON_TEXT_MARKERS: &[&[u8]] = &[
 
 const EOS_TEXT_MARKERS: &[&[u8]] = &[
     b"epiconlineservices",
-    b"eossdk",
-    b"eos_productid",
-    b"eos_auth",
     b"onlinesubsystemeos",
 ];
 
@@ -296,9 +293,15 @@ pub fn scan_game_network_runtime(game_path: &str) -> NetworkRuntime {
         }
     }
 
-    let (runtime, requirements_summary) = if is_photon && is_eos {
-        ("photon_eos".to_string(), "Multijoueur Photon + Epic (EOS)".to_string())
-    } else if is_photon {
+    // Photon takes strict precedence over EOS:
+    // If a game uses Photon for multiplayer rooms/sync, any EOS components are auxiliary (e.g. account/crossplay)
+    // and must NOT trigger EOS OnlineFix injection or photon_eos hybrid modes, which cause crashes.
+    if is_photon {
+        is_eos = false;
+        evidence.retain(|e| e.runtime != "eos");
+    }
+
+    let (runtime, requirements_summary) = if is_photon {
         ("photon".to_string(), "Multijoueur Photon (Relais Loader)".to_string())
     } else if is_eos {
         ("eos".to_string(), "Multijoueur Epic (OnlineFix EOS)".to_string())
