@@ -1,6 +1,9 @@
+[workspace]
+members = [".", "appid_hook"]
+
 [package]
 name = "clemtout-launcher"
-version = "2.0.0"
+version = "2.0.1"
 description = "Clemtout Launcher Modern Rust & React Edition"
 authors = ["ClemtoutLauncher Team"]
 edition = "2024"

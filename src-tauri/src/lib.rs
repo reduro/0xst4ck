@@ -1,5 +1,6 @@
 pub mod dll_manager;
 pub mod loader;
+pub mod overlay_inject;
 pub mod lua_manager;
 pub mod models;
 pub mod scanner;

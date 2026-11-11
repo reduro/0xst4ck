@@ -163,7 +163,8 @@ pub fn launch_game_dynamic(game_id: &str, mode: &str) -> Result<String, String> 
             .env("SteamGameId", "480")
             .env("SteamOverlayGameId", "480")
             .env("SteamNoAppIdCheck", "1")
-            .env("SteamEnv", "1");
+            .env("SteamEnv", "1")
+            .env("SteamClientLaunch", "1");
 
         let child = cmd
             .spawn()
@@ -191,6 +192,7 @@ pub fn launch_game_dynamic(game_id: &str, mode: &str) -> Result<String, String> 
         .env("SteamOverlayGameId", "480")
         .env("SteamNoAppIdCheck", "1")
         .env("SteamEnv", "1")
+        .env("SteamClientLaunch", "1")
         .env("ENABLE_STEAM_OVERLAY", "1");
 
     // Clean up any rogue OnlineFix.dll left in a Photon game directory
@@ -208,6 +210,36 @@ pub fn launch_game_dynamic(game_id: &str, mode: &str) -> Result<String, String> 
             let of_dst = working_dir.join("OnlineFix.dll");
             if !of_dst.exists() {
                 let _ = fs::copy(&of_src, &of_dst);
+            }
+        }
+    }
+
+    // If Steam overlay DLL is available, spawn suspended + inject it so Shift+Tab
+    // works even when the game is launched outside Steam's lifecycle.
+    if let Some(overlay_dll) = crate::overlay_inject::steam_overlay_dll() {
+        let wd = working_dir.to_string_lossy().into_owned();
+        let env_vars: Vec<(&str, &str)> = vec![
+            ("SteamAppId", "480"),
+            ("SteamGameId", "480"),
+            ("SteamOverlayGameId", "480"),
+            ("SteamNoAppIdCheck", "1"),
+            ("SteamEnv", "1"),
+            ("SteamClientLaunch", "1"),
+            ("ENABLE_STEAM_OVERLAY", "1"),
+        ];
+        match crate::overlay_inject::launch_with_overlay(
+            &game_path_str,
+            &game_args_str,
+            &wd,
+            &env_vars,
+            &overlay_dll,
+        ) {
+            Ok(proc) => {
+                crate::overlay_inject::spawn_wait_thread(proc, game_id.to_string());
+                return Ok(format!("Lancé avec Steam overlay injecté (AppID {})", appid));
+            }
+            Err(e) => {
+                eprintln!("[overlay] {}, fallback to plain spawn", e);
             }
         }
     }
