@@ -125,8 +125,9 @@ pub async fn download_and_run_installer(download_url: String) -> Result<String, 
 
     fs::write(&installer_path, &bytes).map_err(|e| format!("Erreur écriture fichier: {}", e))?;
 
-    // Launch installer detached
+    // Launch installer detached with /UPDATE silent mode
     Command::new(&installer_path)
+        .arg("/UPDATE")
         .spawn()
         .map_err(|e| format!("Erreur exécution installeur: {}", e))?;
 
