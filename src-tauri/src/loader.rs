@@ -98,6 +98,36 @@ pub fn unpack_if_needed(target_exe: &Path) -> bool {
     false
 }
 
+fn deploy_steam_environment(target_exe: &Path, working_dir: &Path, effective_appid: &str) {
+    let _ = fs::write(working_dir.join("steam_appid.txt"), effective_appid);
+    if let Some(exe_dir) = target_exe.parent() {
+        if exe_dir != working_dir {
+            let _ = fs::write(exe_dir.join("steam_appid.txt"), effective_appid);
+        }
+    }
+
+    // Deploy native version.dll proxy for in-game achievement capturing & restart blocking
+    let tools = get_tools_dir();
+    let version_dll = tools.join("version.dll");
+    if version_dll.exists() {
+        let _ = fs::copy(&version_dll, working_dir.join("version.dll"));
+        if let Some(exe_dir) = target_exe.parent() {
+            if exe_dir != working_dir {
+                let _ = fs::copy(&version_dll, exe_dir.join("version.dll"));
+            }
+        }
+    }
+
+    for entry in walkdir::WalkDir::new(working_dir).max_depth(4).into_iter().flatten() {
+        let fname = entry.file_name().to_string_lossy().to_lowercase();
+        if fname == "steam_api64.dll" || fname == "steam_api.dll" {
+            if let Some(parent) = entry.path().parent() {
+                let _ = fs::write(parent.join("steam_appid.txt"), effective_appid);
+            }
+        }
+    }
+}
+
 pub fn launch_game_dynamic(game_id: &str, mode: &str) -> Result<String, String> {
     let mut games = load_games();
     let game_index = games
@@ -140,7 +170,7 @@ pub fn launch_game_dynamic(game_id: &str, mode: &str) -> Result<String, String> 
             }
         }
         let child = cmd.spawn().map_err(|e| format!("Erreur direct: {}", e))?;
-        track_playtime_async(child, game_id.to_string());
+        track_process_async(child, game_id.to_string(), game_name_str.clone(), game_path_str.clone(), "direct".to_string());
         return Ok("Lancé en mode Direct".to_string());
     }
 
@@ -170,30 +200,9 @@ pub fn launch_game_dynamic(game_id: &str, mode: &str) -> Result<String, String> 
             .spawn()
             .map_err(|e| format!("Erreur Photon Loader: {}", e))?;
 
-        track_playtime_async(child, game_id.to_string());
+        track_process_async(child, game_id.to_string(), game_name_str.clone(), game_path_str.clone(), "photon".to_string());
         return Ok("Lancé avec succès via le Relais Photon P2P".to_string());
     }
-
-    // 4. Clean Launch with Steamworks / Spacewar 480 Emulation Environment:
-    let appid = "480";
-
-    // Guarantee steam_appid.txt is set to 480 in working directory for normal Spacewar launch
-    let txt_path = working_dir.join("steam_appid.txt");
-    let _ = fs::write(&txt_path, "480");
-
-    let mut cmd = Command::new(&game_path_str);
-    cmd.current_dir(&working_dir);
-    if !game_args_str.trim().is_empty() {
-        cmd.args(game_args_str.split_whitespace());
-    }
-
-    cmd.env("SteamAppId", "480")
-        .env("SteamGameId", "480")
-        .env("SteamOverlayGameId", "480")
-        .env("SteamNoAppIdCheck", "1")
-        .env("SteamEnv", "1")
-        .env("SteamClientLaunch", "1")
-        .env("ENABLE_STEAM_OVERLAY", "1");
 
     // Clean up any rogue OnlineFix.dll left in a Photon game directory
     if requires_photon || mode == "photon" {
@@ -214,55 +223,118 @@ pub fn launch_game_dynamic(game_id: &str, mode: &str) -> Result<String, String> 
         }
     }
 
-    // If Steam overlay DLL is available, spawn suspended + inject it so Shift+Tab
-    // works even when the game is launched outside Steam's lifecycle.
-    if let Some(overlay_dll) = crate::overlay_inject::steam_overlay_dll() {
-        let wd = working_dir.to_string_lossy().into_owned();
-        let env_vars: Vec<(&str, &str)> = vec![
-            ("SteamAppId", "480"),
-            ("SteamGameId", "480"),
-            ("SteamOverlayGameId", "480"),
-            ("SteamNoAppIdCheck", "1"),
-            ("SteamEnv", "1"),
-            ("SteamClientLaunch", "1"),
-            ("ENABLE_STEAM_OVERLAY", "1"),
-        ];
-        match crate::overlay_inject::launch_with_overlay(
-            &game_path_str,
-            &game_args_str,
-            &wd,
-            &env_vars,
-            &overlay_dll,
-        ) {
-            Ok(proc) => {
-                crate::overlay_inject::spawn_wait_thread(proc, game_id.to_string());
-                return Ok(format!("Lancé avec Steam overlay injecté (AppID {})", appid));
+    // 4. Intelligent AppID resolution:
+    // Determine whether this game is cracked (OnlineFix/Spacewar) or a real/OpenSteamTool Steam game
+    let is_onlinefix = working_dir.join("OnlineFix.ini").exists()
+        || working_dir.join("OnlineFix.dll").exists()
+        || working_dir.join("OnlineFix64.dll").exists();
+
+    let configured_appid = games[game_index].steam_appid.as_deref().unwrap_or("480");
+    let is_spacewar = if mode == "spacewar" {
+        true
+    } else if mode == "steam" {
+        false
+    } else if is_onlinefix || configured_appid == "480" {
+        true
+    } else {
+        false
+    };
+
+    let effective_appid = if is_spacewar {
+        "480"
+    } else {
+        configured_appid
+    };
+
+    deploy_steam_environment(path, working_dir, effective_appid);
+
+    let env_vars = [
+        ("SteamAppId", effective_appid),
+        ("SteamGameId", effective_appid),
+        ("SteamOverlayGameId", effective_appid),
+        ("SteamNoAppIdCheck", "1"),
+        ("SteamEnv", "1"),
+        ("SteamClientLaunch", "1"),
+        ("ENABLE_STEAM_OVERLAY", "1"),
+        ("CLEMTOUT_GAME_NAME", &game_name_str),
+        ("CLEMTOUT_REAL_APPID", configured_appid),
+    ];
+
+    match crate::overlay_inject::launch_with_overlay(
+        &game_path_str,
+        &game_args_str,
+        &working_dir.to_string_lossy(),
+        &env_vars,
+    ) {
+        Ok(proc) => {
+            crate::overlay_inject::spawn_wait_thread(
+                proc,
+                game_id.to_string(),
+                game_name_str,
+                game_path_str,
+                if is_spacewar { "spacewar".to_string() } else { "steam".to_string() },
+            );
+            Ok("Lancé avec succès".to_string())
+        }
+        Err(e) => {
+            eprintln!("[loader] Overlay launch failed: {}. Falling back to standard Command.", e);
+            let mut cmd = Command::new(path);
+            cmd.current_dir(working_dir);
+            for (k, v) in &env_vars {
+                cmd.env(k, v);
             }
-            Err(e) => {
-                eprintln!("[overlay] {}, fallback to plain spawn", e);
+            if !game_args_str.trim().is_empty() {
+                for a in game_args_str.split_whitespace() {
+                    cmd.arg(a);
+                }
             }
+            let child = cmd.spawn().map_err(|e| format!("Erreur fallback: {}", e))?;
+            track_process_async(
+                child,
+                game_id.to_string(),
+                game_name_str,
+                game_path_str,
+                if is_spacewar { "spacewar".to_string() } else { "steam".to_string() },
+            );
+            Ok("Lancé en mode Standard (Fallback)".to_string())
         }
     }
-
-    let child = cmd
-        .spawn()
-        .map_err(|e| format!("Impossible de démarrer le jeu : {}", e))?;
-
-    track_playtime_async(child, game_id.to_string());
-    Ok(format!("Lancé avec succès (Spacewar AppID {})", appid))
 }
 
-fn track_playtime_async(mut child: Child, game_id: String) {
+fn track_process_async(
+    mut child: Child,
+    game_id: String,
+    game_name: String,
+    exe_path: String,
+    launch_mode: String,
+) {
+    crate::discord_rpc::set_in_game(&game_name);
     thread::spawn(move || {
         let start = std::time::Instant::now();
-        let _ = child.wait();
-        let elapsed_secs = start.elapsed().as_secs();
+        let status = child.wait();
+        let elapsed_secs = start.elapsed().as_secs_f64();
+        let elapsed_u64 = elapsed_secs.round() as u64;
 
-        if elapsed_secs >= 5 {
+        crate::discord_rpc::set_idle();
+
+        if let Ok(exit_status) = status {
+            let code = exit_status.code().unwrap_or(0);
+            if let Some(report) = crate::crash_handler::evaluate_crash(
+                &game_id,
+                &game_name,
+                &exe_path,
+                &launch_mode,
+                code,
+                elapsed_secs,
+            ) {
+                crate::crash_handler::set_last_crash(report);
+            }
+        }
+
+        if elapsed_u64 > 0 {
             let mut games = load_games();
-            if let Some(target) = games.iter_mut().find(|g| g.id == game_id) {
-                target.playtime += elapsed_secs;
-                target.last_played = chrono::Utc::now().timestamp() as u64;
+            if let Some(pos) = games.iter().position(|g| g.id == game_id) {
+                games[pos].playtime += elapsed_u64;
                 let _ = save_games(&games);
             }
         }

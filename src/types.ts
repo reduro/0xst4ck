@@ -35,6 +35,25 @@ export interface Settings {
   auto_unpack: boolean;
   auto_copy_hooks: boolean;
   github_repo?: string;
+  discord_client_id?: string;
+}
+
+export interface Achievement {
+  apiname: string;
+  name: string;
+  description: string;
+  icon: string;
+  icon_gray: string;
+  unlocked: boolean;
+  unlocked_at?: number;
+}
+
+export interface GameAchievementsSummary {
+  appid: string;
+  total: number;
+  unlocked: number;
+  percentage: number;
+  achievements: Achievement[];
 }
 
 export interface SteamSearchResult {
@@ -71,4 +90,30 @@ export interface UpdateInfo {
   changelog: string;
   download_url?: string;
   asset_name?: string;
+}
+
+
+export interface CrashReport {
+  game_id: string;
+  game_name: string;
+  exe_path: string;
+  exit_code: number;
+  exit_code_hex: string;
+  elapsed_secs: number;
+  launch_mode: string;
+  error_category: string;
+  error_description: string;
+  recommendations: string[];
+  recent_logs?: string;
+  log_source?: string;
+  timestamp: number;
+  discord_markdown: string;
+}
+
+export interface OpenSteamToolStatus {
+  installed: boolean;
+  hook_type: string;
+  dll_hash: string | null;
+  steam_path: string;
+  fallback_enabled: boolean;
 }

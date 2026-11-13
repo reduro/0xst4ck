@@ -63,6 +63,8 @@ pub struct Settings {
     pub auto_copy_hooks: bool,
     #[serde(default = "default_repo")]
     pub github_repo: String,
+    #[serde(default)]
+    pub discord_client_id: Option<String>,
 }
 
 fn default_lang() -> String {
@@ -91,6 +93,7 @@ impl Default for Settings {
             auto_unpack: true,
             auto_copy_hooks: true,
             github_repo: "reduro/0xst4ck".to_string(),
+            discord_client_id: None,
         }
     }
 }
@@ -100,4 +103,23 @@ pub struct SteamSearchResult {
     pub appid: u64,
     pub name: String,
     pub header_image: String,
+}
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrashReport {
+    pub game_id: String,
+    pub game_name: String,
+    pub exe_path: String,
+    pub exit_code: i32,
+    pub exit_code_hex: String,
+    pub elapsed_secs: f64,
+    pub launch_mode: String,
+    pub error_category: String,
+    pub error_description: String,
+    pub recommendations: Vec<String>,
+    pub recent_logs: Option<String>,
+    pub log_source: Option<String>,
+    pub timestamp: u64,
+    pub discord_markdown: String,
 }

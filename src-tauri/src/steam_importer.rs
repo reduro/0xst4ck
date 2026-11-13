@@ -591,10 +591,19 @@ fn save_lua_payload(bytes: &[u8], appid: &str, steam_path: &Path) -> Result<Stri
             return Err("Protection Cloudflare active. Glissez-déposez manuellement votre fichier .lua.".to_string());
         }
 
-        let clean_lines: Vec<&str> = text
-            .lines()
-            .filter(|l| !l.trim().to_lowercase().starts_with("setmanifest"))
-            .collect();
+        let mut clean_lines: Vec<String> = Vec::new();
+        clean_lines.push(format!("addappid({})", appid));
+
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if trimmed.to_lowercase().starts_with("setmanifest") {
+                continue;
+            }
+            if trimmed == format!("addappid({})", appid) || trimmed == format!("addappid( {} )", appid) {
+                continue;
+            }
+            clean_lines.push(trimmed.to_string());
+        }
         let clean_content = clean_lines.join("\n");
 
         let filename = format!("{}.lua", appid);
@@ -686,17 +695,45 @@ pub fn get_opensteamtool_config_server() -> String {
                 let trimmed = line.trim();
                 if trimmed.starts_with("url =") || trimmed.starts_with("url=") {
                     if let Some(val) = trimmed.split('=').nth(1) {
-                        return val.trim().trim_matches('"').to_string();
+                        let clean = val.trim().trim_matches('"').to_lowercase();
+                        if clean.contains("20770407") {
+                            return "20770407".to_string();
+                        } else if clean.contains("993499094") || clean.contains("sdm") {
+                            return "sdm".to_string();
+                        } else if clean.contains("manifestdex") {
+                            return "manifestdex".to_string();
+                        } else if clean.contains("wudrm") {
+                            return "wudrm".to_string();
+                        } else if clean.contains("steam.run") || clean.contains("steamrun") {
+                            return "steamrun".to_string();
+                        }
+                        return clean;
                     }
                 }
             }
         }
     }
-    "steamrun".to_string()
+    "20770407".to_string()
 }
 
 pub fn set_opensteamtool_config_server(server: &str) -> Result<String, String> {
     let steam_path = detect_steam_install_path();
+
+    // Clean up any rogue manifest.lua that could conflict with OpenSteamTool
+    let rogue_manifest = steam_path.join("config").join("lua").join("manifest.lua");
+    if rogue_manifest.exists() {
+        let _ = fs::remove_file(&rogue_manifest);
+    }
+
+    let toml_url = match server {
+        "20770407" => "https://20770407.xyz/manifest/{depotId}/{gid}",
+        "sdm" => "https://steamapi.993499094.xyz/manifest/{depotId}/{gid}",
+        "manifestdex" => "https://manifest.manifestdex.com/{gid}",
+        "wudrm" => "http://gmrc.wudrm.com/manifest/{gid}",
+        "steamrun" => "https://manifest.steam.run/api/manifest/{gid}",
+        other => other,
+    };
+
     let toml_path = steam_path.join("opensteamtool.toml");
     if !toml_path.exists() {
         return Err(format!("opensteamtool.toml introuvable dans {}", steam_path.display()));
@@ -709,7 +746,7 @@ pub fn set_opensteamtool_config_server(server: &str) -> Result<String, String> {
     for line in content.lines() {
         let trimmed = line.trim();
         if (trimmed.starts_with("url =") || trimmed.starts_with("url=")) && !replaced {
-            new_lines.push(format!("url = \"{}\"", server));
+            new_lines.push(format!("url = \"{}\"", toml_url));
             replaced = true;
         } else {
             new_lines.push(line.to_string());
@@ -717,9 +754,9 @@ pub fn set_opensteamtool_config_server(server: &str) -> Result<String, String> {
     }
 
     if !replaced {
-        new_lines.push(format!("\nurl = \"{}\"", server));
+        new_lines.push(format!("\nurl = \"{}\"", toml_url));
     }
 
     fs::write(&toml_path, new_lines.join("\n")).map_err(|e| e.to_string())?;
-    Ok(format!("Serveur mis à jour sur '{}' dans opensteamtool.toml", server))
+    Ok(format!("Serveur OpenSteamTool défini sur '{}' ({})", server, toml_url))
 }
