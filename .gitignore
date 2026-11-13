@@ -30,3 +30,8 @@ stderr.log
 .idea/
 *.suo
 *.sln
+
+Clemtout-Launcher.exe
+Clemtout-Launcher-Setup.exe
+*.exe
+!src-tauri/tools/**/*.exe
