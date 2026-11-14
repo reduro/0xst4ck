@@ -3,7 +3,7 @@ members = [".", "appid_hook"]
 
 [package]
 name = "clemtout-launcher"
-version = "2.1.0"
+version = "2.1.1"
 description = "Clemtout Launcher Modern Rust & React Edition"
 authors = ["ClemtoutLauncher Team"]
 edition = "2024"
