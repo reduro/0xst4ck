@@ -2,10 +2,34 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::Path;
 
+const PATTERN_669FA08E: &str = include_str!("../tools/launchertools/patterns/pattern_669fa08e.toml");
+const IPC_669FA08E: &str = include_str!("../tools/launchertools/patterns/ipc_669fa08e.toml");
+
 fn compute_sha256(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     format!("{:x}", hasher.finalize())
+}
+
+fn sanitize_toml_hooks(content: &str) -> String {
+    // Strip RecvPkt hook entry if present since unverified RVAs cause 0xC0000005 crashes
+    let mut result = String::new();
+    let mut skipping_recv_pkt = false;
+
+    for line in content.lines() {
+        if line.starts_with('[') {
+            skipping_recv_pkt = false;
+        }
+        if line.contains("0x836FF9F0") || line.contains("RecvPkt") {
+            skipping_recv_pkt = true;
+            continue;
+        }
+        if !skipping_recv_pkt {
+            result.push_str(line);
+            result.push('\n');
+        }
+    }
+    result
 }
 
 pub fn ensure_signatures_resolved(steam_path: &Path) {
@@ -22,8 +46,11 @@ pub fn ensure_signatures_resolved(steam_path: &Path) {
 
             let toml_path = pattern_dir.join(format!("{}.toml", sha256));
 
-            if !toml_path.exists() {
-                // Find latest template to copy
+            if sha256 == "669fa08e259277fbf5a1dfe15ce88afe734e89151194304b44d92f418dcc985b" {
+                // Always write our verified pattern definition
+                let _ = fs::write(&toml_path, PATTERN_669FA08E);
+            } else if !toml_path.exists() {
+                // Find latest template to copy as fallback
                 let mut newest_content = None;
                 let mut newest_time = std::time::UNIX_EPOCH;
                 if let Ok(entries) = fs::read_dir(&pattern_dir) {
@@ -34,7 +61,7 @@ pub fn ensure_signatures_resolved(steam_path: &Path) {
                                 if let Ok(mod_time) = meta.modified() {
                                     if mod_time > newest_time {
                                         newest_time = mod_time;
-                                        newest_content = fs::read(&p).ok();
+                                        newest_content = fs::read_to_string(&p).ok();
                                     }
                                 }
                             }
@@ -42,15 +69,13 @@ pub fn ensure_signatures_resolved(steam_path: &Path) {
                     }
                 }
                 if let Some(content) = newest_content {
-                    let _ = fs::write(&toml_path, content);
+                    let sanitized = sanitize_toml_hooks(&content);
+                    let _ = fs::write(&toml_path, sanitized);
                 }
             } else if let Ok(content) = fs::read_to_string(&toml_path) {
-                // Remove legacy unverified injected hooks that cause 0xC0000005 access violations
-                if content.contains("[0xA185DB47]") || content.contains("[0x68211B4D]") {
-                    if let Some(pos) = content.find("[0xA185DB47]") {
-                        let clean = &content[..pos];
-                        let _ = fs::write(&toml_path, clean.trim_end());
-                    }
+                if content.contains("RecvPkt") || content.contains("0x836FF9F0") {
+                    let sanitized = sanitize_toml_hooks(&content);
+                    let _ = fs::write(&toml_path, sanitized);
                 }
             }
 
@@ -61,7 +86,9 @@ pub fn ensure_signatures_resolved(steam_path: &Path) {
                 .join("steamclient");
             let _ = fs::create_dir_all(&ipc_dir);
             let ipc_toml = ipc_dir.join(format!("{}.toml", sha256));
-            if !ipc_toml.exists() {
+            if sha256 == "669fa08e259277fbf5a1dfe15ce88afe734e89151194304b44d92f418dcc985b" {
+                let _ = fs::write(&ipc_toml, IPC_669FA08E);
+            } else if !ipc_toml.exists() {
                 if let Ok(entries) = fs::read_dir(&ipc_dir) {
                     let mut latest_data = None;
                     let mut latest_time = std::time::UNIX_EPOCH;
